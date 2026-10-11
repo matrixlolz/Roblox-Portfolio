@@ -122,6 +122,8 @@ export interface OnwardSummitTemplateProps {
   when?: { left: React.ReactNode; right: React.ReactNode; href?: string; title?: string }
   /** Extra sections, rendered first inside the main column. */
   children?: React.ReactNode
+  /** Extra sections, rendered last inside the main column, before the registration band. */
+  end?: React.ReactNode
 }
 
 // #region content
@@ -1206,6 +1208,7 @@ export default function OnwardSummitTemplate({
   className = "",
   when,
   children,
+  end,
 }: OnwardSummitTemplateProps) {
   const uid = React.useId().replace(/:/g, "")
   const reduced = useReducedMotion()
@@ -1698,6 +1701,8 @@ export default function OnwardSummitTemplate({
             </div>
           </section>
         )}
+
+        {end}
       </main>
 
       {/* ---------------- register ---------------- */}

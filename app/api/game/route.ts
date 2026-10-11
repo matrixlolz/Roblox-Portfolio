@@ -30,15 +30,19 @@ async function load(): Promise<GameStats> {
     if (typeof u?.universeId !== "number") throw new Error("Roblox returned no universe for this place")
     id = universeId = u.universeId as number
   }
-  const [games, votes, icons] = await Promise.all([
+  const [games, votes, icons, shots] = await Promise.all([
     getJson(`https://games.roblox.com/v1/games?universeIds=${id}`),
     getJson(`https://games.roblox.com/v1/games/votes?universeIds=${id}`).catch(() => null),
     getJson(`https://thumbnails.roblox.com/v1/games/icons?universeIds=${id}&returnPolicy=PlaceHolder&size=512x512&format=Png&isCircular=false`).catch(() => null),
+    getJson(`https://thumbnails.roblox.com/v1/games/multiget/thumbnails?universeIds=${id}&countPerUniverse=10&defaults=true&size=768x432&format=Png&isCircular=false`).catch(() => null),
   ])
   const g = games?.data?.[0]
   if (!g) throw new Error("Roblox returned no data for this game")
   const v = votes?.data?.[0]
   const icon = icons?.data?.[0]
+  const screenshots: string[] = (shots?.data?.[0]?.thumbnails ?? [])
+    .filter((t: { state?: string; imageUrl?: string }) => t.state === "Completed" && t.imageUrl)
+    .map((t: { imageUrl: string }) => t.imageUrl)
 
   const now = Date.now()
   history.push({ t: now, playing: g.playing ?? 0 })
@@ -49,6 +53,7 @@ async function load(): Promise<GameStats> {
     name: g.name,
     description: g.description ?? "",
     creator: g.creator?.name ?? "",
+    genre: g.genre && g.genre !== "All" ? g.genre : "",
     playing: g.playing ?? 0,
     visits: g.visits ?? 0,
     favorites: g.favoritedCount ?? 0,
@@ -56,6 +61,7 @@ async function load(): Promise<GameStats> {
     upVotes: typeof v?.upVotes === "number" ? v.upVotes : null,
     downVotes: typeof v?.downVotes === "number" ? v.downVotes : null,
     icon: icon?.state === "Completed" && icon.imageUrl ? icon.imageUrl : null,
+    screenshots,
     created: g.created,
     updated: g.updated,
     fetchedAt: now,

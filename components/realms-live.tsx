@@ -213,11 +213,14 @@ export function RealmsLive({ live }: { live: LiveState }) {
             <LiveDot /> Live from Roblox
           </span>
           <h2 className="ows-h2 rlm-h2">Our game, right now</h2>
-          <p className="ows-intro">Real numbers straight from Roblox, refreshed every 30 seconds. Hover a number to see it in full.</p>
+          <p className="ows-intro">Real numbers straight from Roblox, refreshed every 30 seconds.</p>
         </div>
-        <a className="ows-btn ows-btn--accent" href={GAME.url} target="_blank" rel="noreferrer">
-          Play on Roblox <PlayGlyph />
-        </a>
+        <div className="rlm-actions">
+          <CopyButton text={GAME.url} className="ows-btn ows-btn--dark" label="Copy game link" done="Link copied" />
+          <a className="ows-btn ows-btn--accent" href={GAME.url} target="_blank" rel="noreferrer">
+            Play on Roblox <PlayGlyph />
+          </a>
+        </div>
       </div>
 
       <div className="rlm-card" aria-busy={!stats && !error}>
@@ -278,10 +281,199 @@ export function RealmsLive({ live }: { live: LiveState }) {
               {peak !== null && <span className="rlm-chart-sub">Peak {fmtFull(peak)} since tracking started</span>}
             </div>
             <PlayersChart points={stats?.history ?? []} />
+            {stats && <Milestone visits={stats.visits} />}
+            {stats && <Details stats={stats} now={now} />}
           </>
         )}
       </div>
+
+      {stats && stats.screenshots.length > 0 && <Gallery shots={stats.screenshots} name={stats.name} />}
+      {stats && stats.description.trim() && <About text={stats.description} />}
     </section>
+  )
+}
+
+// ---- copy to clipboard --------------------------------------------------------
+export function useCopy(ms = 1800) {
+  const [copied, setCopied] = React.useState(false)
+  const timer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  React.useEffect(() => () => clearTimeout(timer.current), [])
+  const copy = React.useCallback(
+    async (text: string) => {
+      try {
+        await navigator.clipboard.writeText(text)
+      } catch {
+        // Older browsers and non-https pages: fall back to a hidden textarea.
+        const ta = document.createElement("textarea")
+        ta.value = text
+        ta.style.position = "fixed"
+        ta.style.opacity = "0"
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand("copy")
+        ta.remove()
+      }
+      setCopied(true)
+      clearTimeout(timer.current)
+      timer.current = setTimeout(() => setCopied(false), ms)
+    },
+    [ms],
+  )
+  return { copied, copy }
+}
+
+export function CopyButton({ text, label, done, className }: { text: string; label: string; done: string; className?: string }) {
+  const { copied, copy } = useCopy()
+  return (
+    <button type="button" className={className} onClick={() => copy(text)} aria-live="polite">
+      {copied ? done : label}
+    </button>
+  )
+}
+
+// ---- next visit milestone ---------------------------------------------------------
+const MILESTONES = [1e3, 5e3, 1e4, 25e3, 5e4, 1e5, 25e4, 5e5, 1e6, 25e5, 5e6, 1e7, 25e6, 5e7, 1e8, 25e7, 5e8, 1e9, 1e10]
+
+function Milestone({ visits }: { visits: number }) {
+  const next = MILESTONES.find((m) => m > visits) ?? visits
+  const prev = [...MILESTONES].reverse().find((m) => m <= visits) ?? 0
+  const pct = next === prev ? 100 : Math.min(100, Math.max(0, ((visits - prev) / (next - prev)) * 100))
+  const left = Math.max(0, next - visits)
+  return (
+    <div className="rlm-mile">
+      <div className="rlm-mile-head">
+        <span className="rlm-chart-title">Next milestone: {fmtCompact(next)} visits</span>
+        <span className="rlm-chart-sub">
+          {fmtFull(left)} to go{prev ? ` · passed ${fmtCompact(prev)}` : ""}
+        </span>
+      </div>
+      <div className="rlm-mile-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)} aria-label={`Progress to ${fmtCompact(next)} visits`}>
+        <span style={{ width: pct + "%" }} />
+      </div>
+    </div>
+  )
+}
+
+// ---- game facts ---------------------------------------------------------------------
+function since(iso: string, now: number) {
+  const t = Date.parse(iso)
+  if (isNaN(t)) return ""
+  const d = Math.max(0, Math.floor((now - t) / 86_400_000))
+  if (d === 0) return "today"
+  if (d === 1) return "yesterday"
+  if (d < 30) return `${d} days ago`
+  const m = Math.floor(d / 30)
+  if (m < 12) return `${m} month${m > 1 ? "s" : ""} ago`
+  const y = Math.floor(d / 365)
+  return `${y} year${y > 1 ? "s" : ""} ago`
+}
+
+function dateOf(iso: string) {
+  const t = Date.parse(iso)
+  return isNaN(t) ? "" : new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+}
+
+function Details({ stats, now }: { stats: GameStats; now: number }) {
+  const items = [
+    stats.updated && { k: "Last updated", v: since(stats.updated, now), t: dateOf(stats.updated) },
+    stats.created && { k: "Launched", v: dateOf(stats.created), t: since(stats.created, now) },
+    stats.genre && { k: "Genre", v: stats.genre },
+    stats.maxPlayers && { k: "Server size", v: `${stats.maxPlayers} players` },
+  ].filter(Boolean) as { k: string; v: string; t?: string }[]
+  if (!items.length) return null
+  return (
+    <dl className="rlm-details">
+      {items.map((x) => (
+        <div key={x.k} title={x.t}>
+          <dt>{x.k}</dt>
+          <dd>{x.v}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+// ---- screenshots ------------------------------------------------------------------------
+function Gallery({ shots, name }: { shots: string[]; name: string }) {
+  const [open, setOpen] = React.useState<number | null>(null)
+  const closeRef = React.useRef<HTMLButtonElement>(null)
+  const go = React.useCallback((d: number) => setOpen((i) => (i === null ? i : (i + d + shots.length) % shots.length)), [shots.length])
+
+  React.useEffect(() => {
+    if (open === null) return
+    closeRef.current?.focus()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(null)
+      if (e.key === "ArrowRight") go(1)
+      if (e.key === "ArrowLeft") go(-1)
+    }
+    const overflow = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    window.addEventListener("keydown", onKey)
+    return () => {
+      document.body.style.overflow = overflow
+      window.removeEventListener("keydown", onKey)
+    }
+  }, [open, go])
+
+  return (
+    <div className="rlm-gallery">
+      <div className="rlm-chart-head">
+        <span className="rlm-chart-title">Screenshots</span>
+        <span className="rlm-chart-sub">{shots.length} from the game&apos;s Roblox page</span>
+      </div>
+      <ul className="rlm-shots">
+        {shots.map((src, i) => (
+          <li key={src}>
+            <button type="button" className="rlm-shot" onClick={() => setOpen(i)} aria-label={`Open screenshot ${i + 1} of ${shots.length}`}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={src} alt="" width={768} height={432} loading="lazy" decoding="async" />
+            </button>
+          </li>
+        ))}
+      </ul>
+      {open !== null && (
+        <div className="rlm-lightbox" role="dialog" aria-modal="true" aria-label={`${name} screenshot ${open + 1} of ${shots.length}`} onClick={() => setOpen(null)}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={shots[open]} alt={`${name} screenshot ${open + 1}`} onClick={(e) => e.stopPropagation()} />
+          <button ref={closeRef} type="button" className="rlm-lb-btn rlm-lb-close" onClick={() => setOpen(null)} aria-label="Close">
+            ✕
+          </button>
+          {shots.length > 1 && (
+            <>
+              <button type="button" className="rlm-lb-btn rlm-lb-prev" onClick={(e) => (e.stopPropagation(), go(-1))} aria-label="Previous screenshot">
+                ‹
+              </button>
+              <button type="button" className="rlm-lb-btn rlm-lb-next" onClick={(e) => (e.stopPropagation(), go(1))} aria-label="Next screenshot">
+                ›
+              </button>
+              <span className="rlm-lb-count">
+                {open + 1} / {shots.length}
+              </span>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---- description ----------------------------------------------------------------------------
+function About({ text }: { text: string }) {
+  const [more, setMore] = React.useState(false)
+  const long = text.length > 280 || text.split("\n").length > 4
+  return (
+    <div className="rlm-about">
+      <span className="rlm-chart-title">About the game</span>
+      <p className="rlm-about-text" data-clamp={long && !more ? "" : undefined}>
+        {text.trim()}
+      </p>
+      {long && (
+        <button type="button" className="ows-link rlm-more" onClick={() => setMore((m) => !m)} aria-expanded={more}>
+          {more ? "Show less" : "Show more"}
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -334,7 +526,37 @@ const RLM_CSS = `
 .rlm-tip strong{font-weight:600;font-variant-numeric:tabular-nums}
 .rlm-tip span{opacity:.7;font-size:11.5px}
 .rlm-error{margin-top:24px;padding:18px;border-radius:10px;background:var(--ows-paper);border:1px solid color-mix(in srgb,var(--ows-ink) 10%,transparent);font-size:14px;color:var(--ows-muted)}
+.rlm-actions{display:flex;gap:10px;flex-wrap:wrap}
+.rlm-mile{margin-top:clamp(22px,3vw,30px)}
+.rlm-mile-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.rlm-mile-bar{position:relative;height:8px;margin-top:10px;border-radius:99px;background:color-mix(in srgb,var(--ows-mid) 14%,transparent);overflow:hidden}
+.rlm-mile-bar span{position:absolute;inset:0 auto 0 0;border-radius:99px;background:linear-gradient(90deg,var(--ows-icon-a),var(--ows-mid));transition:width .9s cubic-bezier(.2,.8,.2,1)}
+.rlm-details{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px 18px;margin:clamp(22px,3vw,30px) 0 0;padding-top:clamp(18px,2.4vw,24px);border-top:1px solid color-mix(in srgb,var(--ows-ink) 9%,transparent)}
+.rlm-details dt{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ows-muted)}
+.rlm-details dd{margin:3px 0 0;font-size:15px;font-weight:500}
+.rlm-gallery,.rlm-about{margin-top:clamp(32px,4vw,44px)}
+.rlm-shots{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(260px,32%);gap:14px;margin-top:12px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:8px;scrollbar-width:thin}
+.rlm-shots li{scroll-snap-align:start}
+.rlm-shot{display:block;width:100%;aspect-ratio:16/9;border-radius:10px;overflow:hidden;background:var(--ows-tint)}
+.rlm-shot img{display:block;width:100%;height:100%;object-fit:cover;transition:transform .6s cubic-bezier(.2,.8,.2,1)}
+.rlm-shot:hover img{transform:scale(1.04)}
+.rlm-lightbox{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;padding:56px 16px;background:color-mix(in srgb,var(--ows-deep) 88%,#000);animation:rlm-fade .2s}
+@keyframes rlm-fade{from{opacity:0}}
+.rlm-lightbox img{max-width:min(1200px,100%);max-height:100%;border-radius:10px;box-shadow:0 30px 80px -20px #000}
+.rlm-lb-btn{position:absolute;display:flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.12)!important;color:#fff!important;font-size:22px;line-height:1}
+.rlm-lb-btn:hover{background:rgba(255,255,255,.22)!important}
+.rlm-lb-close{top:14px;right:14px;font-size:16px}
+.rlm-lb-prev{left:14px;top:50%;transform:translateY(-50%)}
+.rlm-lb-next{right:14px;top:50%;transform:translateY(-50%)}
+.rlm-lb-count{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,.75);font-size:13px;font-variant-numeric:tabular-nums}
+.rlm-about-text{margin-top:10px;max-width:720px;font-size:15px;line-height:1.55;color:var(--ows-muted);white-space:pre-line;overflow-wrap:anywhere}
+.rlm-about-text[data-clamp]{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.rlm-more{margin-top:8px;font-size:14px;font-weight:500;color:var(--ows-mid)}
 @media (max-width:760px){
+  .rlm-details{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .rlm-shots{grid-auto-columns:82%}
+  .rlm-actions{width:100%}
+  .rlm-actions>*{flex:1}
   .rlm-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
   .rlm-game{flex-wrap:wrap}
   .rlm-icon{width:60px;height:60px}
