@@ -1,5 +1,5 @@
-import DemoRoblox from "@/demo-roblox"
+import RealmsSite from "@/realms-site"
 
 export default function Page() {
-  return <DemoRoblox />
+  return <RealmsSite />
 }

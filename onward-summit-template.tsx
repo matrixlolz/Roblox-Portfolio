@@ -118,6 +118,10 @@ export interface OnwardSummitTemplateProps {
   /** Minimum height of the hero. A definite length, so it survives any host layout. */
   height?: string
   className?: string
+  /** Replaces the date | city chip in the nav with your own two pieces and link. */
+  when?: { left: React.ReactNode; right: React.ReactNode; href?: string; title?: string }
+  /** Extra sections, rendered first inside the main column. */
+  children?: React.ReactNode
 }
 
 // #region content
@@ -1200,6 +1204,8 @@ export default function OnwardSummitTemplate({
   onRegister,
   height = "100svh",
   className = "",
+  when,
+  children,
 }: OnwardSummitTemplateProps) {
   const uid = React.useId().replace(/:/g, "")
   const reduced = useReducedMotion()
@@ -1392,6 +1398,13 @@ export default function OnwardSummitTemplate({
           <span className="ows-brand-word">{brand}</span>
           {logo ?? <BrandMark />}
         </a>
+        {when ? (
+          <a className="ows-when" href={when.href || "#"} title={when.title}>
+            <span>{when.left}</span>
+            <span className="ows-when-bar" aria-hidden="true" />
+            <span>{when.right}</span>
+          </a>
+        ) : (
         <button type="button" className="ows-when" onClick={saveEvent} title="Add to calendar">
           <span>{date}</span>
           <span className="ows-when-bar" aria-hidden="true" />
@@ -1400,6 +1413,7 @@ export default function OnwardSummitTemplate({
             <CalendarGlyph />
           </span>
         </button>
+        )}
         <a href={register.href || "#register"} className="ows-btn ows-btn--accent ows-btn--nav" onClick={onRegisterClick}>
           <span>{register.label}</span>
           <span className="ows-btn-arrow">
@@ -1431,6 +1445,8 @@ export default function OnwardSummitTemplate({
       </section>
 
       <main className="ows-main">
+        {children}
+
         {/* ---------------- expect ---------------- */}
         {expect && (
           <section className="ows-sec ows-wrap" data-sec="expect">
